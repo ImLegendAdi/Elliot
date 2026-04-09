@@ -849,8 +849,14 @@ const RECONNECT_MAX_TRIES  = 20;
 const CHART_UPDATE_DEBOUNCE = 400; // ms
 const RATE_WINDOW_SEC = 60;
 
-/* Validate a single IP octet (0-255) */
-function isValidOctet(s) { const n = parseInt(s, 10); return String(n) === s && n >= 0 && n <= 255; }
+/* Validate a single IP octet (0-255). Leading zeros (e.g. '01') are intentionally
+   rejected: they are ambiguous (some systems parse them as octal) and are not valid
+   in standard IPv4 notation. */
+function isValidOctet(s) {
+  if (s.length > 1 && s[0] === '0') return false; // reject leading zeros
+  const n = parseInt(s, 10);
+  return !isNaN(n) && n >= 0 && n <= 255;
+}
 
 /* Validate IPv4 address (optionally with /0-32 CIDR) or a hostname */
 const HOSTNAME_RE = /^[a-zA-Z0-9]([a-zA-Z0-9.-]{0,251}[a-zA-Z0-9])?$/;
@@ -937,10 +943,14 @@ function toggleTheme() {
    ───────────────────────────────────────────────────────────────────────── */
 function toggleSound() {
   soundEnabled = !soundEnabled;
+  syncSoundUI();
+  try { localStorage.setItem('elliot-sound', soundEnabled ? '1' : '0'); } catch {}
+}
+
+function syncSoundUI() {
   const btn = document.getElementById('sound-toggle');
   btn.textContent = soundEnabled ? '🔔 Sound' : '🔕 Sound';
   btn.classList.toggle('active', soundEnabled);
-  try { localStorage.setItem('elliot-sound', soundEnabled ? '1' : '0'); } catch {}
 }
 
 function playAlert(severity) {
@@ -1726,8 +1736,8 @@ function restoreSession() {
 
     const sound = localStorage.getItem('elliot-sound');
     if (sound === '1') {
-      // soundEnabled is currently false; toggleSound() will flip it to true and update the UI
-      toggleSound();
+      soundEnabled = true;  // set state first, then sync the UI independently
+      syncSoundUI();
     }
 
     // Restore threat log entries

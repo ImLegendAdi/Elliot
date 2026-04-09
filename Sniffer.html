@@ -1,0 +1,1925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Elliot – AI Packet Sniffer</title>
+
+  <!-- Socket.IO -->
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js" crossorigin="anonymous"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+  <!-- DOMPurify for XSS sanitization -->
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.2/dist/purify.min.js" crossorigin="anonymous"></script>
+
+  <style>
+    /* ───────────────────────── CSS Variables / Theme ─────────────────────── */
+    :root {
+      --bg:          #0d0d1a;
+      --surface:     #13132a;
+      --surface2:    #1b1b38;
+      --border:      #2a2a55;
+      --accent:      #00d4ff;
+      --accent2:     #7c5cfc;
+      --danger:      #ff4757;
+      --warning:     #ffa502;
+      --success:     #2ed573;
+      --text:        #e0e0f5;
+      --text-muted:  #7878a8;
+      --shadow:      0 4px 24px rgba(0,0,0,.5);
+      --radius:      10px;
+      --transition:  .2s ease;
+    }
+
+    [data-theme="light"] {
+      --bg:          #f0f4ff;
+      --surface:     #ffffff;
+      --surface2:    #e8edf8;
+      --border:      #c8d0e8;
+      --accent:      #0055cc;
+      --accent2:     #6b3fc8;
+      --danger:      #d7263d;
+      --warning:     #e05c00;
+      --success:     #1a8a4e;
+      --text:        #1a1a3a;
+      --text-muted:  #5a6080;
+      --shadow:      0 4px 24px rgba(0,0,0,.12);
+    }
+
+    /* ───────────────────────── Reset & Base ──────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      transition: background var(--transition), color var(--transition);
+    }
+
+    a { color: var(--accent); }
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    /* ───────────────────────── Layout ───────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: .75rem;
+      padding: 1rem 1.5rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: .05em;
+    }
+    .logo svg { width: 28px; height: 28px; }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      flex-wrap: wrap;
+    }
+
+    main { padding: 1.25rem; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+    }
+
+    @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    /* ───────────────────────── Card ─────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: .75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+      font-weight: 600;
+      font-size: .9rem;
+      letter-spacing: .03em;
+      color: var(--accent);
+      gap: .5rem;
+      flex-wrap: wrap;
+    }
+
+    .card-body { padding: 1rem; }
+
+    /* ───────────────────────── Buttons ──────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      padding: .45rem .9rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface2);
+      color: var(--text);
+      font-size: .82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all var(--transition);
+      white-space: nowrap;
+    }
+    .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+    .btn-primary   { background: var(--accent);  color: #000; border-color: var(--accent); }
+    .btn-primary:hover:not(:disabled) { opacity: .85; }
+
+    .btn-danger    { background: var(--danger);  color: #fff; border-color: var(--danger); }
+    .btn-danger:hover:not(:disabled) { opacity: .85; }
+
+    .btn-success   { background: var(--success); color: #000; border-color: var(--success); }
+    .btn-success:hover:not(:disabled) { opacity: .85; }
+
+    .btn-warning   { background: var(--warning); color: #000; border-color: var(--warning); }
+    .btn-warning:hover:not(:disabled) { opacity: .85; }
+
+    .btn-sm { padding: .3rem .6rem; font-size: .76rem; }
+    .btn-icon { padding: .4rem .55rem; }
+
+    /* ───────────────────────── Connection Badge ──────────────────────────── */
+    #conn-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      padding: .25rem .7rem;
+      border-radius: 20px;
+      font-size: .78rem;
+      font-weight: 600;
+      border: 1px solid transparent;
+      transition: all var(--transition);
+    }
+    #conn-badge.connected    { background: rgba(46,213,115,.15); border-color: var(--success); color: var(--success); }
+    #conn-badge.disconnected { background: rgba(255,71,87,.15);  border-color: var(--danger);  color: var(--danger); }
+    #conn-badge.connecting   { background: rgba(255,165,2,.15);  border-color: var(--warning); color: var(--warning); }
+
+    .pulse { animation: pulse 1.4s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.4} }
+
+    /* ───────────────────────── Stat Boxes ───────────────────────────────── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: .75rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .stat-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: .85rem 1rem;
+      text-align: center;
+    }
+    .stat-box .stat-val {
+      font-size: 1.7rem;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+    }
+    .stat-box .stat-lbl {
+      font-size: .72rem;
+      color: var(--text-muted);
+      margin-top: .3rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+    /* ───────────────────────── Filter Panel ─────────────────────────────── */
+    .filter-panel {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: .75rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .form-group { display: flex; flex-direction: column; gap: .3rem; }
+    .form-group label { font-size: .78rem; color: var(--text-muted); font-weight: 600; }
+
+    input[type="text"], select {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: .45rem .65rem;
+      font-size: .85rem;
+      transition: border-color var(--transition);
+      width: 100%;
+    }
+    input[type="text"]:focus, select:focus {
+      border-color: var(--accent);
+    }
+    input[type="text"].invalid { border-color: var(--danger); }
+
+    .filter-status-bar {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      font-size: .78rem;
+      color: var(--text-muted);
+      margin-bottom: .75rem;
+      flex-wrap: wrap;
+    }
+    .filter-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: .3rem;
+      padding: .15rem .5rem;
+      background: rgba(0,212,255,.12);
+      border: 1px solid rgba(0,212,255,.3);
+      border-radius: 12px;
+      color: var(--accent);
+      font-size: .76rem;
+    }
+
+    /* ───────────────────────── Packet Table ─────────────────────────────── */
+    .table-toolbar {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      padding: .6rem 1rem;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+
+    .search-box {
+      flex: 1;
+      min-width: 160px;
+      max-width: 280px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: .35rem .6rem;
+      font-size: .82rem;
+    }
+    .search-box:focus { border-color: var(--accent); }
+
+    .table-wrap {
+      overflow-x: auto;
+      max-height: 420px;
+      overflow-y: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .82rem;
+    }
+    thead th {
+      position: sticky;
+      top: 0;
+      background: var(--surface2);
+      color: var(--text-muted);
+      font-weight: 600;
+      text-align: left;
+      padding: .55rem .8rem;
+      border-bottom: 2px solid var(--border);
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+    thead th:hover { color: var(--accent); }
+    thead th .sort-icon { font-size: .65rem; margin-left: .3rem; }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background var(--transition);
+    }
+    tbody tr:hover { background: var(--surface2); }
+    tbody tr.selected { background: rgba(0,212,255,.08); }
+    tbody tr.threat-critical { border-left: 3px solid var(--danger); }
+    tbody tr.threat-high     { border-left: 3px solid var(--warning); }
+    tbody tr.threat-medium   { border-left: 3px solid #ffd32a; }
+
+    td { padding: .5rem .8rem; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* severity badges */
+    .badge {
+      display: inline-block;
+      padding: .1rem .45rem;
+      border-radius: 10px;
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .badge-critical { background: rgba(255,71,87,.2);  color: var(--danger);  border: 1px solid var(--danger); }
+    .badge-high     { background: rgba(255,165,2,.2);  color: var(--warning); border: 1px solid var(--warning); }
+    .badge-medium   { background: rgba(255,211,42,.2); color: #ffd32a;        border: 1px solid #ffd32a; }
+    .badge-low      { background: rgba(46,213,115,.2); color: var(--success); border: 1px solid var(--success); }
+    .badge-info     { background: rgba(0,212,255,.15); color: var(--accent);  border: 1px solid var(--accent); }
+
+    /* pagination */
+    .pagination {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      padding: .6rem 1rem;
+      border-top: 1px solid var(--border);
+      font-size: .8rem;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+    .page-btn {
+      padding: .25rem .55rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface2);
+      color: var(--text);
+      cursor: pointer;
+      font-size: .78rem;
+    }
+    .page-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .page-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+    .page-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ───────────────────────── Packet Detail Modal ───────────────────────── */
+    .modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.65);
+      z-index: 500;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .modal-overlay.open { display: flex; }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      max-width: 640px;
+      width: 100%;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 40px rgba(0,0,0,.6);
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: .75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      color: var(--accent);
+    }
+    .modal-body {
+      padding: 1rem;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .detail-row { display: flex; gap: .5rem; margin-bottom: .5rem; font-size: .84rem; }
+    .detail-key { color: var(--text-muted); min-width: 120px; font-weight: 600; }
+    .detail-val { color: var(--text); word-break: break-all; }
+    .modal-footer {
+      display: flex;
+      gap: .5rem;
+      padding: .75rem 1rem;
+      border-top: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+
+    /* ───────────────────────── Alerts / Notifications ───────────────────── */
+    #alert-panel {
+      position: fixed;
+      bottom: 1rem;
+      right: 1rem;
+      z-index: 600;
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+      max-width: 360px;
+      width: 100%;
+    }
+
+    .alert-toast {
+      display: flex;
+      align-items: flex-start;
+      gap: .6rem;
+      padding: .75rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      animation: slideIn .3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .alert-toast::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 4px;
+    }
+    .alert-toast.critical::before { background: var(--danger); }
+    .alert-toast.high::before     { background: var(--warning); }
+    .alert-toast.medium::before   { background: #ffd32a; }
+    .alert-toast.info::before     { background: var(--accent); }
+
+    .alert-icon { font-size: 1.2rem; }
+    .alert-body { flex: 1; }
+    .alert-title { font-weight: 700; font-size: .84rem; }
+    .alert-desc  { font-size: .76rem; color: var(--text-muted); margin-top: .15rem; }
+    .alert-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1rem; line-height: 1; }
+    .alert-close:hover { color: var(--text); }
+
+    @keyframes slideIn { from { transform: translateX(120%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+    @keyframes slideOut { from { transform:translateX(0); opacity:1; } to { transform:translateX(120%); opacity:0; } }
+
+    /* ───────────────────────── Charts ───────────────────────────────────── */
+    .chart-container { position: relative; height: 220px; }
+
+    /* ───────────────────────── Threat Log ───────────────────────────────── */
+    #threat-log {
+      max-height: 260px;
+      overflow-y: auto;
+      font-size: .8rem;
+    }
+    .threat-entry {
+      display: flex;
+      align-items: flex-start;
+      gap: .5rem;
+      padding: .5rem .6rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .threat-entry:last-child { border-bottom: none; }
+    .threat-time { color: var(--text-muted); white-space: nowrap; font-size: .73rem; }
+    .threat-msg  { flex: 1; }
+
+    /* ───────────────────────── Error Banner ─────────────────────────────── */
+    #error-banner {
+      display: none;
+      align-items: center;
+      gap: .6rem;
+      padding: .65rem 1.25rem;
+      background: rgba(255,71,87,.12);
+      border-bottom: 1px solid var(--danger);
+      color: var(--danger);
+      font-size: .84rem;
+    }
+    #error-banner.visible { display: flex; }
+
+    /* ───────────────────────── Reconnect Overlay ────────────────────────── */
+    #reconnect-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.75);
+      z-index: 800;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 1rem;
+      text-align: center;
+    }
+    #reconnect-overlay.visible { display: flex; }
+    #reconnect-msg { font-size: 1.1rem; color: var(--text-muted); }
+    #reconnect-count { font-size: 3rem; font-weight: 700; color: var(--warning); }
+
+    /* ───────────────────────── Keyboard Shortcut Hint ───────────────────── */
+    #shortcuts-hint {
+      position: fixed;
+      bottom: 1rem;
+      left: 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: .85rem 1rem;
+      font-size: .78rem;
+      color: var(--text-muted);
+      z-index: 400;
+      display: none;
+      box-shadow: var(--shadow);
+      min-width: 200px;
+    }
+    #shortcuts-hint.visible { display: block; }
+    #shortcuts-hint h4 { color: var(--text); margin-bottom: .5rem; font-size: .82rem; }
+    .shortcut-row { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .25rem; }
+    kbd {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: .1rem .4rem;
+      font-family: monospace;
+      font-size: .75rem;
+      color: var(--accent);
+    }
+
+    /* ───────────────────────── Misc ─────────────────────────────────────── */
+    .empty-state {
+      text-align: center;
+      padding: 2.5rem 1rem;
+      color: var(--text-muted);
+      font-size: .9rem;
+    }
+    .empty-state svg { margin-bottom: .75rem; opacity: .4; }
+
+    .separator { height: 1px; background: var(--border); margin: 1rem 0; }
+
+    .scroll-wrap { overflow-y: auto; }
+
+    /* sound toggle */
+    #sound-toggle.active { color: var(--accent); border-color: var(--accent); }
+
+    /* ───────────────────────── Responsive tweaks ────────────────────────── */
+    @media (max-width: 600px) {
+      header { padding: .75rem 1rem; }
+      .logo { font-size: 1.15rem; }
+      .stats-row { grid-template-columns: repeat(2, 1fr); }
+      .filter-panel { grid-template-columns: 1fr; }
+      td, th { font-size: .74rem; padding: .4rem .5rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════ HEADER ════════════════════════════════════ -->
+<header role="banner">
+  <div class="logo" aria-label="Elliot AI Packet Sniffer">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+    </svg>
+    Elliot
+  </div>
+
+  <div class="header-actions">
+    <div id="conn-badge" class="connecting" role="status" aria-live="polite">
+      <span class="pulse" aria-hidden="true">●</span>
+      <span id="conn-text">Connecting…</span>
+    </div>
+
+    <button class="btn btn-sm" id="theme-toggle" title="Toggle dark/light theme (T)" aria-label="Toggle theme">
+      🌙 Theme
+    </button>
+
+    <button class="btn btn-sm" id="sound-toggle" title="Toggle alert sounds (S)" aria-label="Toggle alert sounds">
+      🔕 Sound
+    </button>
+
+    <button class="btn btn-sm" id="shortcuts-btn" title="Keyboard shortcuts (?)" aria-label="Show keyboard shortcuts">
+      ⌨ Keys
+    </button>
+  </div>
+</header>
+
+<!-- Error Banner -->
+<div id="error-banner" role="alert" aria-live="assertive">
+  <span>⚠</span>
+  <span id="error-text">Connection error.</span>
+  <button class="btn btn-sm btn-danger" onclick="manualReconnect()" style="margin-left:auto">Reconnect</button>
+</div>
+
+<!-- ═══════════════════════════ MAIN ══════════════════════════════════════ -->
+<main role="main">
+
+  <!-- ── Stats Row ──────────────────────────────────────────────────────── -->
+  <div class="stats-row" role="region" aria-label="Live statistics">
+    <div class="stat-box">
+      <div class="stat-val" id="stat-total">0</div>
+      <div class="stat-lbl">Packets Captured</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="stat-rate">0</div>
+      <div class="stat-lbl">Packets/sec</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="stat-bw">0 B</div>
+      <div class="stat-lbl">Data Captured</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="stat-threats">0</div>
+      <div class="stat-lbl">Threat Alerts</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="stat-unique-ips">0</div>
+      <div class="stat-lbl">Unique IPs</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="stat-filtered">0</div>
+      <div class="stat-lbl">Filtered / Shown</div>
+    </div>
+  </div>
+
+  <!-- ── Capture Control Card ───────────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:1.25rem" role="region" aria-label="Capture controls">
+    <div class="card-header">
+      🎯 Capture Controls
+      <span style="font-size:.75rem;color:var(--text-muted);font-weight:400">
+        Press <kbd>Space</kbd> to start/stop · <kbd>C</kbd> clear · <kbd>E</kbd> export
+      </span>
+    </div>
+    <div class="card-body">
+      <div class="filter-panel">
+        <div class="form-group">
+          <label for="iface-select">Network Interface</label>
+          <select id="iface-select" aria-label="Select network interface">
+            <option value="">Loading interfaces…</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="filter-ip">IP Filter <span style="color:var(--danger);font-size:.7rem" id="ip-err"></span></label>
+          <input type="text" id="filter-ip" placeholder="e.g. 192.168.1.1" aria-label="Filter by IP address" autocomplete="off" />
+        </div>
+        <div class="form-group">
+          <label for="filter-proto">Protocol</label>
+          <select id="filter-proto" aria-label="Filter by protocol">
+            <option value="">All Protocols</option>
+            <option>TCP</option><option>UDP</option><option>ICMP</option>
+            <option>DNS</option><option>HTTP</option><option>HTTPS</option>
+            <option>ARP</option><option>Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="filter-port">Port Filter</label>
+          <input type="text" id="filter-port" placeholder="e.g. 80 or 443" aria-label="Filter by port" autocomplete="off" />
+        </div>
+      </div>
+
+      <!-- Filter status -->
+      <div class="filter-status-bar" id="filter-status-bar" aria-live="polite">
+        <span>Active filters:</span>
+        <span id="active-filters-display" style="color:var(--text-muted)">None</span>
+      </div>
+
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-primary" id="btn-start" aria-label="Start packet capture (Space)">
+          ▶ Start Capture
+        </button>
+        <button class="btn btn-danger" id="btn-stop" disabled aria-label="Stop packet capture (Space)">
+          ⏹ Stop
+        </button>
+        <button class="btn" id="btn-clear" aria-label="Clear all captured data (C)">
+          🗑 Clear
+        </button>
+        <button class="btn btn-success" id="btn-export-json" aria-label="Export packets as JSON (E)">
+          ⬇ Export JSON
+        </button>
+        <button class="btn" id="btn-export-pcap" aria-label="Download PCAP from server">
+          ⬇ Download PCAP
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Charts Row ─────────────────────────────────────────────────────── -->
+  <div class="grid-2" style="margin-bottom:1.25rem">
+    <div class="card" role="region" aria-label="Protocol distribution chart">
+      <div class="card-header">📊 Protocol Distribution</div>
+      <div class="card-body">
+        <div class="chart-container">
+          <canvas id="proto-chart" aria-label="Protocol distribution doughnut chart" role="img"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="card" role="region" aria-label="Packet rate over time chart">
+      <div class="card-header">📈 Packet Rate (last 60s)</div>
+      <div class="card-body">
+        <div class="chart-container">
+          <canvas id="rate-chart" aria-label="Packet rate line chart" role="img"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Packet Table + Threat Log ──────────────────────────────────────── -->
+  <div class="grid-2">
+
+    <!-- Packet Table -->
+    <div class="card" role="region" aria-label="Captured packets table">
+      <div class="card-header">
+        📦 Packets
+        <span id="table-count-label" style="font-size:.75rem;color:var(--text-muted);font-weight:400"></span>
+      </div>
+
+      <div class="table-toolbar">
+        <input class="search-box" id="search-box" type="search"
+               placeholder="Search packets…" aria-label="Search captured packets" />
+        <div style="margin-left:auto;display:flex;gap:.4rem">
+          <button class="btn btn-sm" id="btn-copy-sel" disabled aria-label="Copy selected packet to clipboard">
+            📋 Copy
+          </button>
+        </div>
+      </div>
+
+      <div class="table-wrap" role="region" aria-label="Packet list" tabindex="0">
+        <table aria-label="Captured packets">
+          <thead>
+            <tr>
+              <th scope="col" data-col="num" aria-sort="none"># <span class="sort-icon"></span></th>
+              <th scope="col" data-col="time" aria-sort="none">Time <span class="sort-icon"></span></th>
+              <th scope="col" data-col="src" aria-sort="none">Source <span class="sort-icon"></span></th>
+              <th scope="col" data-col="dst" aria-sort="none">Destination <span class="sort-icon"></span></th>
+              <th scope="col" data-col="proto" aria-sort="none">Proto <span class="sort-icon"></span></th>
+              <th scope="col" data-col="len" aria-sort="none">Len <span class="sort-icon"></span></th>
+              <th scope="col" data-col="severity" aria-sort="none">Threat <span class="sort-icon"></span></th>
+            </tr>
+          </thead>
+          <tbody id="packet-tbody">
+            <tr><td colspan="7">
+              <div class="empty-state">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
+                <p>No packets captured yet.<br>Start capture to begin.</p>
+              </div>
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pagination" id="pagination" aria-label="Packet table pagination">
+        <button class="page-btn" id="pg-prev" aria-label="Previous page" disabled>‹</button>
+        <span id="pg-info" aria-live="polite">Page 1 of 1</span>
+        <button class="page-btn" id="pg-next" aria-label="Next page" disabled>›</button>
+        <span style="margin-left:auto;color:var(--text-muted)">
+          Rows per page:
+          <select id="pg-size" aria-label="Rows per page" style="width:56px;display:inline-block;padding:.2rem .3rem;font-size:.76rem">
+            <option value="25">25</option>
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+          </select>
+        </span>
+      </div>
+    </div>
+
+    <!-- Threat Log -->
+    <div class="card" role="region" aria-label="Threat alert log">
+      <div class="card-header">
+        🚨 Threat Alerts
+        <div style="display:flex;gap:.4rem">
+          <button class="btn btn-sm btn-warning" id="btn-clear-threats" aria-label="Clear threat log">Clear</button>
+        </div>
+      </div>
+      <div id="threat-log" aria-live="polite" aria-label="Threat log entries">
+        <div class="empty-state" style="padding:1.5rem">No threats detected.</div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<!-- ═══════════════════════════ PACKET DETAIL MODAL ══════════════════════ -->
+<div class="modal-overlay" id="detail-modal" role="dialog" aria-modal="true"
+     aria-labelledby="modal-title" tabindex="-1">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="modal-title">Packet Details</span>
+      <button class="btn btn-icon" id="modal-close" aria-label="Close packet details">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-sm" id="modal-copy-btn" aria-label="Copy packet details to clipboard">📋 Copy Details</button>
+      <button class="btn btn-sm" style="margin-left:auto" id="modal-close2" aria-label="Close">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ ALERT PANEL ══════════════════════════════ -->
+<div id="alert-panel" aria-live="assertive" aria-relevant="additions"></div>
+
+<!-- ═══════════════════════════ RECONNECT OVERLAY ════════════════════════ -->
+<div id="reconnect-overlay" role="status" aria-live="assertive">
+  <div>
+    <svg width="56" height="56" viewBox="0 0 24 24" fill="none"
+         stroke="var(--warning)" stroke-width="1.5" aria-hidden="true">
+      <path d="M23 4v6h-6M1 20v-6h6"/>
+      <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+    </svg>
+  </div>
+  <div id="reconnect-msg">Connection lost. Reconnecting…</div>
+  <div id="reconnect-count" aria-label="Reconnection attempt">0</div>
+</div>
+
+<!-- ═══════════════════════════ SHORTCUTS HINT ═══════════════════════════ -->
+<div id="shortcuts-hint" role="complementary" aria-label="Keyboard shortcuts">
+  <h4>⌨ Keyboard Shortcuts</h4>
+  <div class="shortcut-row"><span>Start/Stop</span><kbd>Space</kbd></div>
+  <div class="shortcut-row"><span>Clear</span><kbd>C</kbd></div>
+  <div class="shortcut-row"><span>Export JSON</span><kbd>E</kbd></div>
+  <div class="shortcut-row"><span>Theme toggle</span><kbd>T</kbd></div>
+  <div class="shortcut-row"><span>Sound toggle</span><kbd>S</kbd></div>
+  <div class="shortcut-row"><span>Close modal</span><kbd>Esc</kbd></div>
+  <div class="shortcut-row"><span>Shortcuts</span><kbd>?</kbd></div>
+</div>
+
+<!-- ═══════════════════════════ SCRIPT ═══════════════════════════════════ -->
+<script>
+'use strict';
+
+/* ─────────────────────────────────────────────────────────────────────────
+   CONSTANTS & STATE
+   ───────────────────────────────────────────────────────────────────────── */
+const PAGE_SIZE_DEFAULT = 50;
+const MAX_BUFFERED_PACKETS = 5000; // total in-memory cap (archived when exceeded)
+const MAX_THREAT_LOG = 200;
+const RECONNECT_DELAY_BASE = 1500; // ms
+const RECONNECT_MAX_DELAY  = 30000;
+const RECONNECT_MAX_TRIES  = 20;
+const CHART_UPDATE_DEBOUNCE = 400; // ms
+const RATE_WINDOW_SEC = 60;
+
+/* Validate a single IP octet (0-255). Leading zeros (e.g. '01') are intentionally
+   rejected: they are ambiguous (some systems parse them as octal) and are not valid
+   in standard IPv4 notation. */
+function isValidOctet(s) {
+  if (s.length > 1 && s[0] === '0') return false; // reject leading zeros
+  const n = parseInt(s, 10);
+  return !isNaN(n) && n >= 0 && n <= 255;
+}
+
+/* Validate IPv4 address (optionally with /0-32 CIDR) or a hostname */
+const HOSTNAME_RE = /^[a-zA-Z0-9]([a-zA-Z0-9.-]{0,251}[a-zA-Z0-9])?$/;
+const LOOKS_LIKE_IPV4_RE = /^\d+\.\d+\.\d+\.\d+(\/\d+)?$/;
+function isValidIP(val) {
+  const cidrIdx = val.indexOf('/');
+  const host = cidrIdx >= 0 ? val.slice(0, cidrIdx) : val;
+  const cidr = cidrIdx >= 0 ? val.slice(cidrIdx + 1) : null;
+
+  // Check optional CIDR prefix length
+  if (cidr !== null) {
+    const prefix = parseInt(cidr, 10);
+    if (isNaN(prefix) || prefix < 0 || prefix > 32) return false;
+  }
+
+  // If it looks like a dotted-decimal IPv4, validate octets strictly
+  if (LOOKS_LIKE_IPV4_RE.test(val)) {
+    const octets = host.split('.');
+    return octets.length === 4 && octets.every(isValidOctet);
+  }
+
+  // Allow plain hostnames (no CIDR)
+  if (cidr === null && HOSTNAME_RE.test(host)) return true;
+
+  return false;
+}
+
+const PORT_RE = /^\d{1,5}$/;
+
+let socket = null;
+let isCapturing = false;
+let soundEnabled = false;
+let audioCtx = null;
+
+// Packet store
+let allPackets = [];          // all packets (capped at MAX_BUFFERED_PACKETS)
+let filteredPackets = [];     // after client-side search/filter
+let currentPage = 1;
+let pageSize = PAGE_SIZE_DEFAULT;
+let sortCol = 'num';
+let sortDir = 'asc';
+let selectedPacketIdx = null;
+
+// Rate tracking
+let rateHistory = Array(RATE_WINDOW_SEC).fill(0); // packets per second
+let rateLastSec = Date.now();
+let rateCounter  = 0;
+let totalBytes   = 0;
+let uniqueIPs    = new Set();
+let threatCount  = 0;
+
+// Proto counts
+let protoCounts = {};
+
+// Reconnection
+let reconnectAttempts = 0;
+let reconnectTimer = null;
+
+// Chart instances
+let protoChart = null;
+let rateChart  = null;
+
+// Debounce timers
+let chartDebounceTimer = null;
+let searchDebounceTimer = null;
+
+/* ─────────────────────────────────────────────────────────────────────────
+   THEME
+   ───────────────────────────────────────────────────────────────────────── */
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  document.getElementById('theme-toggle').textContent = theme === 'light' ? '🌑 Theme' : '🌙 Theme';
+  try { localStorage.setItem('elliot-theme', theme); } catch {}
+  if (protoChart) rebuildCharts();
+}
+
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SOUND
+   ───────────────────────────────────────────────────────────────────────── */
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  syncSoundUI();
+  try { localStorage.setItem('elliot-sound', soundEnabled ? '1' : '0'); } catch {}
+}
+
+function syncSoundUI() {
+  const btn = document.getElementById('sound-toggle');
+  btn.textContent = soundEnabled ? '🔔 Sound' : '🔕 Sound';
+  btn.classList.toggle('active', soundEnabled);
+}
+
+function playAlert(severity) {
+  if (!soundEnabled) return;
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    const freqMap = { critical: 880, high: 660, medium: 440, low: 330 };
+    osc.frequency.value = freqMap[severity] || 440;
+    osc.type = 'sine';
+    gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.35);
+  } catch {}
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   XSS SANITIZATION  (DOMPurify with safe fallback)
+   ───────────────────────────────────────────────────────────────────────── */
+function sanitize(str) {
+  if (typeof str !== 'string') str = String(str ?? '');
+  if (typeof DOMPurify !== 'undefined') {
+    return DOMPurify.sanitize(str, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+  }
+  // Fallback: manual HTML-entity encoding (no DOMPurify loaded)
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SOCKET.IO  – Connection Management & Reconnection
+   ───────────────────────────────────────────────────────────────────────── */
+function initSocket() {
+  if (socket) {
+    socket.removeAllListeners();
+    socket.disconnect();
+  }
+
+  // Connect (adjust URL if backend is on a different port/host)
+  socket = io('/', {
+    transports: ['websocket', 'polling'],
+    reconnection: false,       // we handle reconnection ourselves
+    timeout: 8000
+  });
+
+  setBadge('connecting');
+
+  socket.on('connect', () => {
+    clearReconnectState();
+    setBadge('connected');
+    requestInterfaces();
+    showErrorBanner(false);
+  });
+
+  socket.on('disconnect', (reason) => {
+    setBadge('disconnected');
+    showErrorBanner(true, `Disconnected: ${reason}`);
+    isCapturing = false;
+    syncCaptureUI();
+    scheduleReconnect();
+  });
+
+  socket.on('connect_error', (err) => {
+    setBadge('disconnected');
+    showErrorBanner(true, `Connection error: ${sanitize(err.message)}`);
+    scheduleReconnect();
+  });
+
+  socket.on('interfaces', (data) => {
+    populateInterfaces(Array.isArray(data) ? data : []);
+  });
+
+  socket.on('packet', (pkt) => {
+    handlePacket(pkt);
+  });
+
+  socket.on('threat', (alert) => {
+    handleThreatAlert(alert);
+  });
+
+  socket.on('capture_started', () => {
+    isCapturing = true;
+    syncCaptureUI();
+  });
+
+  socket.on('capture_stopped', () => {
+    isCapturing = false;
+    syncCaptureUI();
+  });
+
+  socket.on('error_msg', (msg) => {
+    showErrorBanner(true, sanitize(typeof msg === 'string' ? msg : msg?.message || 'Server error'));
+  });
+}
+
+function scheduleReconnect() {
+  if (reconnectAttempts >= RECONNECT_MAX_TRIES) {
+    showErrorBanner(true, 'Max reconnection attempts reached. Click Reconnect to try again.');
+    document.getElementById('reconnect-overlay').classList.remove('visible');
+    return;
+  }
+
+  const delay = Math.min(RECONNECT_DELAY_BASE * Math.pow(1.4, reconnectAttempts), RECONNECT_MAX_DELAY);
+  reconnectAttempts++;
+
+  document.getElementById('reconnect-overlay').classList.add('visible');
+  document.getElementById('reconnect-count').textContent = reconnectAttempts;
+  document.getElementById('reconnect-msg').textContent =
+    `Connection lost. Reconnecting (${reconnectAttempts}/${RECONNECT_MAX_TRIES})…`;
+
+  reconnectTimer = setTimeout(() => {
+    initSocket();
+  }, delay);
+}
+
+function clearReconnectState() {
+  reconnectAttempts = 0;
+  clearTimeout(reconnectTimer);
+  document.getElementById('reconnect-overlay').classList.remove('visible');
+}
+
+function manualReconnect() {
+  clearTimeout(reconnectTimer);
+  reconnectAttempts = 0;
+  initSocket();
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   UI HELPERS
+   ───────────────────────────────────────────────────────────────────────── */
+function setBadge(state) {
+  const badge = document.getElementById('conn-badge');
+  const text  = document.getElementById('conn-text');
+  badge.className = state;
+  const labels = { connected: 'Connected', disconnected: 'Disconnected', connecting: 'Connecting…' };
+  text.textContent = labels[state] || state;
+}
+
+function showErrorBanner(visible, msg) {
+  const banner = document.getElementById('error-banner');
+  banner.classList.toggle('visible', visible);
+  if (msg) document.getElementById('error-text').textContent = msg;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   INTERFACES
+   ───────────────────────────────────────────────────────────────────────── */
+function requestInterfaces() {
+  if (!socket?.connected) return;
+  socket.emit('get_interfaces');
+}
+
+function populateInterfaces(list) {
+  const sel = document.getElementById('iface-select');
+  sel.innerHTML = '';
+
+  if (!list || list.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'No interfaces available';
+    sel.appendChild(opt);
+    return;
+  }
+
+  list.forEach(iface => {
+    const opt = document.createElement('option');
+    opt.value = sanitize(iface);
+    opt.textContent = sanitize(iface);
+    sel.appendChild(opt);
+  });
+
+  // Restore last-used interface
+  try {
+    const saved = localStorage.getItem('elliot-iface');
+    if (saved && list.includes(saved)) sel.value = saved;
+  } catch {}
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   FILTER VALIDATION
+   ───────────────────────────────────────────────────────────────────────── */
+function validateIPFilter(val) {
+  if (!val) return true;
+  const parts = val.split(',').map(s => s.trim());
+  return parts.every(p => isValidIP(p));
+}
+
+function validatePortFilter(val) {
+  if (!val) return true;
+  return PORT_RE.test(val.trim()) && parseInt(val.trim(), 10) <= 65535;
+}
+
+function getFilters() {
+  return {
+    iface: document.getElementById('iface-select').value,
+    ip:    document.getElementById('filter-ip').value.trim(),
+    proto: document.getElementById('filter-proto').value,
+    port:  document.getElementById('filter-port').value.trim()
+  };
+}
+
+function updateFilterStatusBar() {
+  const { ip, proto, port } = getFilters();
+  const tags = [];
+  if (ip)    tags.push(`IP: ${sanitize(ip)}`);
+  if (proto) tags.push(`Protocol: ${sanitize(proto)}`);
+  if (port)  tags.push(`Port: ${sanitize(port)}`);
+
+  const el = document.getElementById('active-filters-display');
+  if (tags.length === 0) {
+    el.innerHTML = '<span style="color:var(--text-muted)">None</span>';
+  } else {
+    el.innerHTML = tags.map(t => `<span class="filter-tag">${t}</span>`).join(' ');
+  }
+  applyClientFilter();
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   CAPTURE CONTROL
+   ───────────────────────────────────────────────────────────────────────── */
+function startCapture() {
+  if (!socket?.connected) { showErrorBanner(true, 'Not connected to server.'); return; }
+
+  const { iface, ip, proto, port } = getFilters();
+
+  // Validate
+  const ipErr = document.getElementById('ip-err');
+  if (!validateIPFilter(ip)) {
+    document.getElementById('filter-ip').classList.add('invalid');
+    ipErr.textContent = '✕ Invalid IP';
+    return;
+  }
+  document.getElementById('filter-ip').classList.remove('invalid');
+  ipErr.textContent = '';
+
+  if (!validatePortFilter(port)) {
+    document.getElementById('filter-port').classList.add('invalid');
+    return;
+  }
+  document.getElementById('filter-port').classList.remove('invalid');
+
+  // Persist iface choice
+  try { if (iface) localStorage.setItem('elliot-iface', iface); } catch {}
+
+  socket.emit('start_capture', { iface, filter_ip: ip, filter_proto: proto, filter_port: port });
+  isCapturing = true;
+  syncCaptureUI();
+}
+
+function stopCapture() {
+  if (socket?.connected) socket.emit('stop_capture');
+  isCapturing = false;
+  syncCaptureUI();
+}
+
+function syncCaptureUI() {
+  document.getElementById('btn-start').disabled = isCapturing;
+  document.getElementById('btn-stop').disabled  = !isCapturing;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PACKET HANDLING
+   ───────────────────────────────────────────────────────────────────────── */
+function handlePacket(pkt) {
+  if (!pkt || typeof pkt !== 'object') return;
+
+  // Sanitize all string fields to prevent XSS
+  const safe = {
+    num:      allPackets.length + 1,
+    time:     sanitize(pkt.time ?? new Date().toLocaleTimeString()),
+    src:      sanitize(pkt.src  ?? pkt.source ?? '—'),
+    dst:      sanitize(pkt.dst  ?? pkt.destination ?? '—'),
+    proto:    sanitize(pkt.proto ?? pkt.protocol ?? 'Unknown'),
+    len:      parseInt(pkt.len ?? pkt.length ?? 0, 10),
+    payload:  sanitize(pkt.payload ?? ''),
+    severity: sanitize(pkt.severity ?? ''),
+    threat:   sanitize(pkt.threat   ?? ''),
+    raw:      pkt                    // store original (for export)
+  };
+
+  // Stats
+  totalBytes  += safe.len;
+  if (safe.src !== '—') uniqueIPs.add(safe.src);
+  if (safe.dst !== '—') uniqueIPs.add(safe.dst);
+  rateCounter++;
+
+  // Protocol counts
+  const p = safe.proto.toUpperCase();
+  protoCounts[p] = (protoCounts[p] || 0) + 1;
+
+  // Append
+  if (allPackets.length >= MAX_BUFFERED_PACKETS) {
+    allPackets.shift(); // drop oldest
+  }
+  allPackets.push(safe);
+
+  updateStats();
+  scheduleChartUpdate();
+  applyClientFilter();
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   CLIENT-SIDE FILTERING & SEARCH
+   ───────────────────────────────────────────────────────────────────────── */
+function applyClientFilter() {
+  const search = document.getElementById('search-box').value.toLowerCase().trim();
+  const { proto } = getFilters();
+
+  filteredPackets = allPackets.filter(p => {
+    if (proto && p.proto.toUpperCase() !== proto.toUpperCase()) return false;
+    if (search) {
+      const hay = `${p.src} ${p.dst} ${p.proto} ${p.payload} ${p.threat}`.toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+
+  // Reset to page 1 if current page out of range
+  const totalPages = Math.max(1, Math.ceil(filteredPackets.length / pageSize));
+  if (currentPage > totalPages) currentPage = 1;
+
+  renderTable();
+  updateStats();
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   TABLE RENDER
+   ───────────────────────────────────────────────────────────────────────── */
+function renderTable() {
+  const tbody = document.getElementById('packet-tbody');
+
+  // Sort
+  const sorted = [...filteredPackets].sort((a, b) => {
+    let av = a[sortCol] ?? '';
+    let bv = b[sortCol] ?? '';
+    if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av;
+    av = String(av); bv = String(bv);
+    return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+  });
+
+  const start = (currentPage - 1) * pageSize;
+  const page  = sorted.slice(start, start + pageSize);
+
+  if (page.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7">
+      <div class="empty-state">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/>
+        </svg>
+        <p>${allPackets.length === 0 ? 'No packets captured yet.' : 'No packets match filter.'}</p>
+      </div>
+    </td></tr>`;
+  } else {
+    const frag = document.createDocumentFragment();
+    page.forEach((pkt, i) => {
+      const tr = document.createElement('tr');
+      const globalIdx = start + i;
+      tr.dataset.idx = globalIdx;
+      tr.setAttribute('tabindex', '0');
+      tr.setAttribute('role', 'row');
+      tr.setAttribute('aria-label', `Packet from ${pkt.src} to ${pkt.dst}`);
+
+      const sev = (pkt.severity || '').toLowerCase();
+      if (sev === 'critical') tr.classList.add('threat-critical');
+      else if (sev === 'high') tr.classList.add('threat-high');
+      else if (sev === 'medium') tr.classList.add('threat-medium');
+      if (selectedPacketIdx === globalIdx) tr.classList.add('selected');
+
+      const badge = sev ? `<span class="badge badge-${sev}" aria-label="Threat: ${sev}">${sev}</span>` : '—';
+
+      tr.innerHTML = `
+        <td>${pkt.num}</td>
+        <td>${pkt.time}</td>
+        <td title="${pkt.src}">${pkt.src}</td>
+        <td title="${pkt.dst}">${pkt.dst}</td>
+        <td><span class="badge badge-info">${pkt.proto}</span></td>
+        <td>${pkt.len}</td>
+        <td>${badge}</td>
+      `;
+
+      tr.addEventListener('click', () => selectPacket(globalIdx, sorted));
+      tr.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') selectPacket(globalIdx, sorted); });
+      frag.appendChild(tr);
+    });
+    tbody.innerHTML = '';
+    tbody.appendChild(frag);
+  }
+
+  updateSortHeaders();
+  renderPagination(sorted.length);
+
+  const countLabel = document.getElementById('table-count-label');
+  countLabel.textContent = `${filteredPackets.length} / ${allPackets.length} packets`;
+  document.getElementById('stat-filtered').textContent = filteredPackets.length;
+}
+
+function selectPacket(idx, sorted) {
+  selectedPacketIdx = idx;
+  const pkt = sorted[idx];
+  if (!pkt) return;
+
+  // Highlight row
+  document.querySelectorAll('#packet-tbody tr').forEach(r => r.classList.remove('selected'));
+  document.querySelector(`#packet-tbody tr[data-idx="${idx}"]`)?.classList.add('selected');
+
+  document.getElementById('btn-copy-sel').disabled = false;
+
+  // Store for copy/modal
+  window._selectedPkt = pkt;
+  showPacketModal(pkt);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PAGINATION
+   ───────────────────────────────────────────────────────────────────────── */
+function renderPagination(total) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  document.getElementById('pg-info').textContent = `Page ${currentPage} of ${totalPages}`;
+  document.getElementById('pg-prev').disabled = currentPage <= 1;
+  document.getElementById('pg-next').disabled = currentPage >= totalPages;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SORT HEADERS
+   ───────────────────────────────────────────────────────────────────────── */
+function updateSortHeaders() {
+  document.querySelectorAll('thead th[data-col]').forEach(th => {
+    const col = th.dataset.col;
+    const icon = th.querySelector('.sort-icon');
+    if (col === sortCol) {
+      icon.textContent = sortDir === 'asc' ? '▲' : '▼';
+      th.setAttribute('aria-sort', sortDir === 'asc' ? 'ascending' : 'descending');
+    } else {
+      icon.textContent = '';
+      th.setAttribute('aria-sort', 'none');
+    }
+  });
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   STATS
+   ───────────────────────────────────────────────────────────────────────── */
+function updateStats() {
+  document.getElementById('stat-total').textContent   = allPackets.length.toLocaleString();
+  document.getElementById('stat-threats').textContent = threatCount.toLocaleString();
+  document.getElementById('stat-unique-ips').textContent = uniqueIPs.size.toLocaleString();
+  document.getElementById('stat-bw').textContent      = formatBytes(totalBytes);
+  document.getElementById('stat-filtered').textContent = filteredPackets.length.toLocaleString();
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   RATE TRACKING  (ticks every second)
+   ───────────────────────────────────────────────────────────────────────── */
+function tickRate() {
+  rateHistory.shift();
+  rateHistory.push(rateCounter);
+  document.getElementById('stat-rate').textContent = rateCounter;
+  rateCounter = 0;
+
+  // Update chart data (don't rebuild, just update)
+  if (rateChart) {
+    rateChart.data.datasets[0].data = [...rateHistory];
+    rateChart.update('none');
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   CHARTS  (Chart.js)
+   ───────────────────────────────────────────────────────────────────────── */
+function getChartColors() {
+  const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+  return {
+    text:   isDark ? '#e0e0f5' : '#1a1a3a',
+    grid:   isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.08)',
+    accent: isDark ? '#00d4ff' : '#0055cc',
+    palette: ['#00d4ff','#7c5cfc','#2ed573','#ffa502','#ff4757','#ff6b81','#eccc68','#70a1ff']
+  };
+}
+
+function buildProtoChart() {
+  const ctx = document.getElementById('proto-chart');
+  if (!ctx) return;
+
+  // Destroy existing instance to prevent memory leak
+  if (protoChart) { protoChart.destroy(); protoChart = null; }
+
+  const { palette, text } = getChartColors();
+  const labels = Object.keys(protoCounts);
+  const data   = labels.map(l => protoCounts[l]);
+
+  protoChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: palette.slice(0, labels.length), borderWidth: 0 }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'right', labels: { color: text, font: { size: 11 }, boxWidth: 12 } }
+      },
+      animation: { duration: 200 }
+    }
+  });
+}
+
+function buildRateChart() {
+  const ctx = document.getElementById('rate-chart');
+  if (!ctx) return;
+
+  // Destroy existing instance to prevent memory leak
+  if (rateChart) { rateChart.destroy(); rateChart = null; }
+
+  const { text, grid, accent } = getChartColors();
+  const labels = Array.from({ length: RATE_WINDOW_SEC }, (_, i) => `-${RATE_WINDOW_SEC - i}s`);
+
+  rateChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Packets/s',
+        data: [...rateHistory],
+        borderColor: accent,
+        backgroundColor: accent + '22',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { display: false },
+        y: {
+          beginAtZero: true,
+          grid:  { color: grid },
+          ticks: { color: text, font: { size: 10 } }
+        }
+      },
+      animation: { duration: 0 }
+    }
+  });
+}
+
+function rebuildCharts() {
+  buildProtoChart();
+  buildRateChart();
+}
+
+function scheduleChartUpdate() {
+  clearTimeout(chartDebounceTimer);
+  chartDebounceTimer = setTimeout(() => {
+    if (!protoChart) return;
+    const labels = Object.keys(protoCounts);
+    const data   = labels.map(l => protoCounts[l]);
+    protoChart.data.labels = labels;
+    protoChart.data.datasets[0].data = data;
+    protoChart.update('none');
+  }, CHART_UPDATE_DEBOUNCE);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   THREAT ALERTS
+   ───────────────────────────────────────────────────────────────────────── */
+function handleThreatAlert(alert) {
+  if (!alert || typeof alert !== 'object') return;
+  threatCount++;
+  updateStats();
+
+  const severity = sanitize(alert.severity ?? 'info').toLowerCase();
+  const message  = sanitize(alert.message  ?? alert.msg ?? 'Unknown threat');
+  const src      = sanitize(alert.src ?? '');
+  const time     = new Date().toLocaleTimeString();
+
+  // Add to log
+  addThreatEntry(severity, message, src, time);
+
+  // Toast
+  showToast(severity, message, src);
+
+  // Sound
+  playAlert(severity);
+
+  // Persist to localStorage
+  try {
+    const log = JSON.parse(localStorage.getItem('elliot-threats') || '[]');
+    log.unshift({ severity, message, src, time });
+    if (log.length > MAX_THREAT_LOG) log.length = MAX_THREAT_LOG;
+    localStorage.setItem('elliot-threats', JSON.stringify(log));
+  } catch {}
+}
+
+function addThreatEntry(severity, message, src, time) {
+  const log = document.getElementById('threat-log');
+
+  // Remove empty state
+  const empty = log.querySelector('.empty-state');
+  if (empty) empty.remove();
+
+  const entry = document.createElement('div');
+  entry.className = 'threat-entry';
+  entry.setAttribute('role', 'listitem');
+  entry.innerHTML = `
+    <span class="badge badge-${severity}" aria-label="Severity: ${severity}">${severity}</span>
+    <span class="threat-msg">
+      <strong>${message}</strong>
+      ${src ? `<br><small style="color:var(--text-muted)">Source: ${src}</small>` : ''}
+    </span>
+    <span class="threat-time">${time}</span>
+  `;
+  log.prepend(entry);
+
+  // Cap log entries
+  const entries = log.querySelectorAll('.threat-entry');
+  if (entries.length > MAX_THREAT_LOG) entries[entries.length - 1].remove();
+}
+
+function showToast(severity, message, src) {
+  const panel = document.getElementById('alert-panel');
+  const icons  = { critical: '🔴', high: '🟠', medium: '🟡', low: '🟢', info: '🔵' };
+
+  const toast = document.createElement('div');
+  toast.className = `alert-toast ${severity}`;
+  toast.setAttribute('role', 'alert');
+  toast.innerHTML = `
+    <span class="alert-icon" aria-hidden="true">${icons[severity] || '⚠'}</span>
+    <div class="alert-body">
+      <div class="alert-title">${severity.toUpperCase()} Alert</div>
+      <div class="alert-desc">${message}${src ? ` · ${src}` : ''}</div>
+    </div>
+    <button class="alert-close" aria-label="Dismiss alert">✕</button>
+  `;
+
+  toast.querySelector('.alert-close').addEventListener('click', () => dismissToast(toast));
+  panel.appendChild(toast);
+
+  // Auto-dismiss
+  const delay = { critical: 8000, high: 6000, medium: 4000 }[severity] ?? 3000;
+  setTimeout(() => dismissToast(toast), delay);
+}
+
+function dismissToast(toast) {
+  if (!toast.parentNode) return;
+  toast.style.animation = 'slideOut .3s ease forwards';
+  setTimeout(() => toast.remove(), 300);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PACKET DETAIL MODAL
+   ───────────────────────────────────────────────────────────────────────── */
+function showPacketModal(pkt) {
+  const body = document.getElementById('modal-body');
+  const fields = [
+    ['Packet #',     pkt.num],
+    ['Time',         pkt.time],
+    ['Source',       pkt.src],
+    ['Destination',  pkt.dst],
+    ['Protocol',     pkt.proto],
+    ['Length',       `${pkt.len} bytes`],
+    ['Severity',     pkt.severity || 'None'],
+    ['Threat',       pkt.threat   || 'None'],
+    ['Payload',      pkt.payload  || '(empty)']
+  ];
+
+  body.innerHTML = fields.map(([k, v]) => `
+    <div class="detail-row">
+      <span class="detail-key">${k}</span>
+      <span class="detail-val">${v}</span>
+    </div>
+  `).join('');
+
+  const overlay = document.getElementById('detail-modal');
+  overlay.classList.add('open');
+  overlay.focus();
+}
+
+function closeModal() {
+  document.getElementById('detail-modal').classList.remove('open');
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   COPY TO CLIPBOARD
+   ───────────────────────────────────────────────────────────────────────── */
+function copyToClipboard(text) {
+  if (!text) return;
+  navigator.clipboard?.writeText(text).catch(() => {
+    // Fallback
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+  });
+}
+
+function copySelectedPacket() {
+  const pkt = window._selectedPkt;
+  if (!pkt) return;
+  const text = Object.entries(pkt)
+    .filter(([k]) => k !== 'raw')
+    .map(([k, v]) => `${k}: ${v}`)
+    .join('\n');
+  copyToClipboard(text);
+  showToast('info', 'Packet details copied to clipboard', '');
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   EXPORT
+   ───────────────────────────────────────────────────────────────────────── */
+function exportJSON() {
+  const data = allPackets.map(p => ({ ...p, raw: undefined }));
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `elliot-capture-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadPCAP() {
+  if (!socket?.connected) { showErrorBanner(true, 'Not connected.'); return; }
+  window.location.href = '/download_pcap';
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   CLEAR
+   ───────────────────────────────────────────────────────────────────────── */
+function clearAll() {
+  allPackets      = [];
+  filteredPackets = [];
+  protoCounts     = {};
+  rateHistory     = Array(RATE_WINDOW_SEC).fill(0);
+  totalBytes      = 0;
+  uniqueIPs.clear();
+  threatCount      = 0;
+  selectedPacketIdx = null;
+  window._selectedPkt = null;
+  currentPage      = 1;
+
+  document.getElementById('btn-copy-sel').disabled = true;
+  updateStats();
+  renderTable();
+  rebuildCharts();
+
+  // Clear threat log
+  const log = document.getElementById('threat-log');
+  log.innerHTML = '<div class="empty-state" style="padding:1.5rem">No threats detected.</div>';
+
+  // Clear persisted threats
+  try { localStorage.removeItem('elliot-threats'); } catch {}
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SESSION PERSISTENCE  (localStorage)
+   ───────────────────────────────────────────────────────────────────────── */
+function restoreSession() {
+  try {
+    const theme = localStorage.getItem('elliot-theme') || 'dark';
+    applyTheme(theme);
+
+    const sound = localStorage.getItem('elliot-sound');
+    if (sound === '1') {
+      soundEnabled = true;  // set state first, then sync the UI independently
+      syncSoundUI();
+    }
+
+    // Restore threat log entries
+    const threats = JSON.parse(localStorage.getItem('elliot-threats') || '[]');
+    threats.forEach(t => addThreatEntry(t.severity, t.message, t.src, t.time));
+    if (threats.length > 0) threatCount = threats.length;
+    updateStats();
+  } catch {}
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   KEYBOARD SHORTCUTS
+   ───────────────────────────────────────────────────────────────────────── */
+document.addEventListener('keydown', (e) => {
+  // Skip when focused on input/select/textarea
+  const tag = document.activeElement.tagName;
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) {
+    if (e.key === 'Escape') document.activeElement.blur();
+    return;
+  }
+
+  switch (e.key) {
+    case ' ':
+    case 'Space':
+      e.preventDefault();
+      isCapturing ? stopCapture() : startCapture();
+      break;
+    case 'c':
+    case 'C':
+      if (!e.ctrlKey && !e.metaKey) clearAll();
+      break;
+    case 'e':
+    case 'E':
+      exportJSON();
+      break;
+    case 't':
+    case 'T':
+      toggleTheme();
+      break;
+    case 's':
+    case 'S':
+      toggleSound();
+      break;
+    case '?':
+      document.getElementById('shortcuts-hint').classList.toggle('visible');
+      break;
+    case 'Escape':
+      closeModal();
+      document.getElementById('shortcuts-hint').classList.remove('visible');
+      break;
+  }
+});
+
+/* ─────────────────────────────────────────────────────────────────────────
+   EVENT BINDINGS
+   ───────────────────────────────────────────────────────────────────────── */
+function bindEvents() {
+  document.getElementById('btn-start').addEventListener('click', startCapture);
+  document.getElementById('btn-stop').addEventListener('click', stopCapture);
+  document.getElementById('btn-clear').addEventListener('click', clearAll);
+  document.getElementById('btn-export-json').addEventListener('click', exportJSON);
+  document.getElementById('btn-export-pcap').addEventListener('click', downloadPCAP);
+
+  document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+  document.getElementById('sound-toggle').addEventListener('click', toggleSound);
+  document.getElementById('shortcuts-btn').addEventListener('click', () => {
+    document.getElementById('shortcuts-hint').classList.toggle('visible');
+  });
+
+  document.getElementById('modal-close').addEventListener('click', closeModal);
+  document.getElementById('modal-close2').addEventListener('click', closeModal);
+  document.getElementById('detail-modal').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeModal();
+  });
+
+  document.getElementById('modal-copy-btn').addEventListener('click', () => {
+    const pkt = window._selectedPkt;
+    if (pkt) {
+      const text = Object.entries(pkt)
+        .filter(([k]) => k !== 'raw')
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('\n');
+      copyToClipboard(text);
+    }
+  });
+
+  document.getElementById('btn-copy-sel').addEventListener('click', copySelectedPacket);
+
+  // Threat log clear
+  document.getElementById('btn-clear-threats').addEventListener('click', () => {
+    document.getElementById('threat-log').innerHTML =
+      '<div class="empty-state" style="padding:1.5rem">No threats detected.</div>';
+    threatCount = 0;
+    updateStats();
+    try { localStorage.removeItem('elliot-threats'); } catch {}
+  });
+
+  // Pagination
+  document.getElementById('pg-prev').addEventListener('click', () => { currentPage--; renderTable(); });
+  document.getElementById('pg-next').addEventListener('click', () => { currentPage++; renderTable(); });
+  document.getElementById('pg-size').addEventListener('change', (e) => {
+    pageSize = parseInt(e.target.value, 10);
+    currentPage = 1;
+    renderTable();
+  });
+
+  // Sort headers
+  document.querySelectorAll('thead th[data-col]').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (sortCol === col) {
+        sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortCol = col;
+        sortDir = 'asc';
+      }
+      renderTable();
+    });
+  });
+
+  // Search (debounced)
+  document.getElementById('search-box').addEventListener('input', () => {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+      currentPage = 1;
+      applyClientFilter();
+    }, 250);
+  });
+
+  // Filter inputs → update status bar
+  ['filter-ip', 'filter-proto', 'filter-port'].forEach(id => {
+    document.getElementById(id).addEventListener('change', () => {
+      currentPage = 1;
+      updateFilterStatusBar();
+    });
+    document.getElementById(id).addEventListener('input', () => {
+      currentPage = 1;
+      updateFilterStatusBar();
+    });
+  });
+
+  // IP validation live feedback
+  document.getElementById('filter-ip').addEventListener('input', (e) => {
+    const val = e.target.value.trim();
+    const ipErr = document.getElementById('ip-err');
+    if (val && !validateIPFilter(val)) {
+      e.target.classList.add('invalid');
+      ipErr.textContent = '✕ Invalid IP';
+    } else {
+      e.target.classList.remove('invalid');
+      ipErr.textContent = '';
+    }
+  });
+
+  // Port validation live feedback
+  document.getElementById('filter-port').addEventListener('input', (e) => {
+    const val = e.target.value.trim();
+    if (val && !validatePortFilter(val)) {
+      e.target.classList.add('invalid');
+    } else {
+      e.target.classList.remove('invalid');
+    }
+  });
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   INIT
+   ───────────────────────────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  restoreSession();
+  bindEvents();
+  rebuildCharts();
+  initSocket();
+
+  // Rate ticker (every 1 second)
+  setInterval(tickRate, 1000);
+
+  // Initial UI state
+  syncCaptureUI();
+  updateFilterStatusBar();
+  renderTable();
+});
+</script>
+</body>
+</html>

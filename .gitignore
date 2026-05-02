@@ -1,0 +1,16 @@
+# Compiled binaries
+challenges/challenge1_sum_array/challenge_stripped
+challenges/challenge1_sum_array/challenge_debug
+challenges/challenge2_hidden_constant/challenge_stripped
+challenges/challenge2_hidden_constant/challenge_debug
+challenges/challenge3_struct_layout/challenge_stripped
+challenges/challenge3_struct_layout/challenge_debug
+
+# Object files
+*.o
+*.obj
+
+# Editor files
+.vscode/
+*.swp
+*~
